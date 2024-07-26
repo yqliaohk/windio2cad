@@ -477,13 +477,21 @@ class FloatingPlatform:
         for member in self.floating_platform["members"]:
             joint1 = joints_dict[member["joint1"]]
             joint2 = joints_dict[member["joint2"]]
-            grid = member["outer_shape"]["outer_diameter"]["grid"]
-            values = member["outer_shape"]["outer_diameter"]["values"]
-            members.append(self.member(joint1, joint2, grid, values))
+            
+            if "outer_diameter" in member["outer_shape"]:
+                grid = member["outer_shape"]["outer_diameter"]["grid"]
+                values = member["outer_shape"]["outer_diameter"]["values"]
+                members.append(self.member(joint1, joint2, grid, values, shape = "circular"))
+            elif "side_length_a" in member["outer_shape"]:
+                grid = member["outer_shape"]["side_length_a"]["grid"]
+                values = member["outer_shape"]["side_length_a"]["values"] + member["outer_shape"]["side_length_b"]["values"]
+                print("values: ", values)
+                members.append(self.member(joint1, joint2, grid, values, shape = "rectangular"))
+            
         return solid.union()(members)
 
     def member(
-        self, joint1: np.array, joint2: np.array, grid: List[float], values: List[float]
+        self, joint1: np.array, joint2: np.array, grid: List[float], values: List[float], shape: str
     ) -> solid.OpenSCADObject:
         """
         Creates a member between two points.
@@ -506,6 +514,9 @@ class FloatingPlatform:
         values: List[float]
             Diameters at each position on the grid.
 
+        shape: stru
+            Shape of the member, circular or rectangular
+
         Returns
         -------
         solid.OpenSCADObject
@@ -515,14 +526,25 @@ class FloatingPlatform:
         height = norm(direction)
 
         member_shapes = []
-        for i in range(len(grid) - 1):
-            section_height = (height * grid[i + 1]) - (height * grid[i])
-            bottom = (0.0, 0.0, height * grid[i])
-            r1 = values[i] / 2.0
-            r2 = values[i + 1] / 2.0
-            cylinder = solid.cylinder(r1=r1, r2=r2, h=section_height)
-            translation = solid.translate(bottom)(cylinder)
-            member_shapes.append(translation)
+        if shape == "circular":
+            for i in range(len(grid) - 1):
+                section_height = (height * grid[i + 1]) - (height * grid[i])
+                bottom = (0.0, 0.0, height * grid[i])
+                r1 = values[i] / 2.0
+                r2 = values[i + 1] / 2.0
+                cylinder = solid.cylinder(r1=r1, r2=r2, h=section_height)
+                translation = solid.translate(bottom)(cylinder)
+                member_shapes.append(translation)
+        elif shape == "rectangular":
+            for i in range(len(grid) - 1):
+                depth = (height * grid[i + 1]) - (height * grid[i])
+                # Because it is centered, it should be translated to the middle of two grid planes.
+                bottom = (0.0, 0.0, height * 0.5*(grid[i]+grid[i+1]))
+                width = values[i]
+                section_height = values[len(values)//2+i]
+                cube = solid.cube(size=[width, section_height, depth], center=True)
+                translation = solid.translate(bottom)(cube)
+                member_shapes.append(translation)
 
         member_union = solid.union()(member_shapes)
 
